@@ -239,13 +239,14 @@ class AutoLogin:
         self.username = os.environ.get('GH_USERNAME')
         self.password = os.environ.get('GH_PASSWORD')
         self.gh_session = os.environ.get('GH_SESSION', '').strip()
+        self.claw_cookies = os.environ.get('CLAW_COOKIES', '').strip()
         self.tg = Telegram()
         self.github = GitHubReleases()  # GitHub Releases 上传器
         self.secret = SecretUpdater()
         self.shots = []
         self.logs = []
         self.n = 0
-        
+
         # 区域相关
         self.detected_region = None  # 检测到的区域，如 "ap-southeast-1"
         self.region_base_url = None  # 检测到的区域基础 URL
@@ -327,7 +328,7 @@ class AutoLogin:
         return LOGIN_ENTRY_URL
     
     def get_session(self, context):
-        """提取 Session Cookie"""
+        """提取 GitHub Session Cookie"""
         try:
             for c in context.cookies():
                 if c['name'] == 'user_session' and 'github' in c.get('domain', ''):
@@ -335,14 +336,38 @@ class AutoLogin:
         except:
             pass
         return None
+
+    def get_claw_cookies(self, context):
+        """提取所有 ClawCloud Cookie"""
+        try:
+            import json
+            cookies = []
+            for c in context.cookies():
+                # 只提取 claw.cloud 相关的 cookies
+                if 'claw.cloud' in c.get('domain', ''):
+                    cookies.append({
+                        'name': c['name'],
+                        'value': c['value'],
+                        'domain': c['domain'],
+                        'path': c.get('path', '/'),
+                        'expires': c.get('expires', -1),
+                        'httpOnly': c.get('httpOnly', False),
+                        'secure': c.get('secure', False),
+                        'sameSite': c.get('sameSite', 'None')
+                    })
+            if cookies:
+                return json.dumps(cookies)
+        except Exception as e:
+            self.log(f"提取 ClawCloud Cookies 失败: {e}", "WARN")
+        return None
     
     def save_cookie(self, value):
-        """保存新 Cookie"""
+        """保存新 GitHub Cookie"""
         if not value:
             return
-        
+
         self.log(f"新 Cookie: {value[:15]}...{value[-8:]}", "SUCCESS")
-        
+
         # 自动更新 Secret
         if self.secret.update('GH_SESSION', value):
             self.log("已自动更新 GH_SESSION", "SUCCESS")
@@ -355,6 +380,26 @@ class AutoLogin:
 <tg-spoiler>{value}</tg-spoiler>
 """)
             self.log("已通过 Telegram 发送 Cookie", "SUCCESS")
+
+    def save_claw_cookies(self, value):
+        """保存 ClawCloud Cookies"""
+        if not value:
+            return
+
+        self.log(f"新 ClawCloud Cookies ({len(value)} 字符)", "SUCCESS")
+
+        # 自动更新 Secret
+        if self.secret.update('CLAW_COOKIES', value):
+            self.log("已自动更新 CLAW_COOKIES", "SUCCESS")
+            self.tg.send("🍪 <b>ClawCloud Cookies 已自动更新</b>\n\nCLAW_COOKIES 已保存")
+        else:
+            # 通过 Telegram 发送
+            self.tg.send(f"""🍪 <b>新 ClawCloud Cookies</b>
+
+请更新 Secret <b>CLAW_COOKIES</b> (点击查看):
+<tg-spoiler>{value}</tg-spoiler>
+""")
+            self.log("已通过 Telegram 发送 ClawCloud Cookies", "SUCCESS")
     
     def wait_device(self, page):
         """等待设备验证"""
@@ -792,7 +837,8 @@ class AutoLogin:
         print("="*50 + "\n")
         
         self.log(f"用户名: {self.username}")
-        self.log(f"Session: {'有' if self.gh_session else '无'}")
+        self.log(f"GitHub Session: {'有' if self.gh_session else '无'}")
+        self.log(f"ClawCloud Cookies: {'有' if self.claw_cookies else '无'}")
         self.log(f"密码: {'有' if self.password else '无'}")
         self.log(f"登录入口: {LOGIN_ENTRY_URL}")
         
@@ -810,16 +856,50 @@ class AutoLogin:
             page = context.new_page()
             
             try:
-                # 预加载 Cookie
+                # 预加载 GitHub Cookie
                 if self.gh_session:
                     try:
                         context.add_cookies([
                             {'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'},
                             {'name': 'logged_in', 'value': 'yes', 'domain': 'github.com', 'path': '/'}
                         ])
-                        self.log("已加载 Session Cookie", "SUCCESS")
+                        self.log("已加载 GitHub Session Cookie", "SUCCESS")
                     except:
-                        self.log("加载 Cookie 失败", "WARN")
+                        self.log("加载 GitHub Cookie 失败", "WARN")
+
+                # 预加载 ClawCloud Cookies
+                if self.claw_cookies:
+                    try:
+                        import json
+                        cookies = []
+
+                        # 尝试解析 JSON 格式
+                        if self.claw_cookies.startswith('['):
+                            cookies = json.loads(self.claw_cookies)
+                        else:
+                            # 解析 Cookie 字符串格式 (name=value; name2=value2; ...)
+                            for item in self.claw_cookies.split(';'):
+                                item = item.strip()
+                                if '=' in item:
+                                    name, value = item.split('=', 1)
+                                    # 尝试从环境变量获取域名，或使用默认域名
+                                    domain = os.environ.get('CLAW_COOKIE_DOMAIN', '.run.claw.cloud')
+                                    cookies.append({
+                                        'name': name.strip(),
+                                        'value': value.strip(),
+                                        'domain': domain,
+                                        'path': '/',
+                                        'expires': -1,
+                                        'httpOnly': False,
+                                        'secure': True,
+                                        'sameSite': 'Lax'
+                                    })
+
+                        if cookies:
+                            context.add_cookies(cookies)
+                            self.log(f"已加载 {len(cookies)} 个 ClawCloud Cookies", "SUCCESS")
+                    except Exception as e:
+                        self.log(f"加载 ClawCloud Cookies 失败: {e}", "WARN")
                 
                 # 1. 访问 ClawCloud 登录入口
                 self.log("步骤1: 打开 ClawCloud 登录页", "STEP")
@@ -855,10 +935,14 @@ class AutoLogin:
                     # 检测区域
                     self.detect_region(url)
                     self.keepalive(page)
-                    # 提取并保存新 Cookie
+                    # 提取并保存新 GitHub Cookie
                     new = self.get_session(context)
                     if new:
                         self.save_cookie(new)
+                    # 提取并保存 ClawCloud Cookies
+                    claw_cookies = self.get_claw_cookies(context)
+                    if claw_cookies:
+                        self.save_claw_cookies(claw_cookies)
                     self.notify(True)
                     print("\n✅ 成功！\n")
                     return
@@ -899,14 +983,22 @@ class AutoLogin:
                 
                 # 6. 保活（使用检测到的区域 URL）
                 self.keepalive(page)
-                
+
                 # 7. 提取并保存新 Cookie
                 self.log("步骤6: 更新 Cookie", "STEP")
                 new = self.get_session(context)
                 if new:
                     self.save_cookie(new)
                 else:
-                    self.log("未获取到新 Cookie", "WARN")
+                    self.log("未获取到新 GitHub Cookie", "WARN")
+
+                # 8. 提取并保存 ClawCloud Cookies
+                self.log("步骤7: 更新 ClawCloud Cookies", "STEP")
+                claw_cookies = self.get_claw_cookies(context)
+                if claw_cookies:
+                    self.save_claw_cookies(claw_cookies)
+                else:
+                    self.log("未获取到新 ClawCloud Cookies", "WARN")
                 
                 self.notify(True)
                 print("\n" + "="*50)

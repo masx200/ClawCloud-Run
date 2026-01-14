@@ -33,6 +33,12 @@ jobs:
           GH_USERNAME: ${{ secrets.GH_USERNAME }}
           GH_PASSWORD: ${{ secrets.GH_PASSWORD }}
           GH_SESSION: ${{ secrets.GH_SESSION }}
+
+
+
+          CLAW_COOKIES: ${{ secrets.CLAW_COOKIES }}
+
+          
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
