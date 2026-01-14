@@ -293,6 +293,41 @@ class AutoLogin:
             except:
                 pass
         return False
+
+    def check_region_not_available(self, page):
+        """检查页面是否出现 REGION_NOT_AVAILABLE 错误"""
+        try:
+            # 检查页面 URL
+            if 'REGION_NOT_AVAILABLE' in page.url:
+                return True
+
+            # 检查页面文本内容
+            page_content = page.content()
+            if 'REGION_NOT_AVAILABLE' in page_content:
+                return True
+
+            # 检查常见的错误提示元素
+            error_selectors = [
+                '.flash-error',
+                '.error-message',
+                '[class*="error"]',
+                '[role="alert"]'
+            ]
+
+            for selector in error_selectors:
+                try:
+                    el = page.locator(selector).first
+                    if el.is_visible(timeout=2000):
+                        text = el.inner_text()
+                        if 'REGION_NOT_AVAILABLE' in text:
+                            return True
+                except:
+                    pass
+
+        except Exception as e:
+            self.log(f"检查 REGION_NOT_AVAILABLE 时出错: {e}", "WARN")
+
+        return False
     
     def detect_region(self, url):
         """
@@ -787,58 +822,72 @@ class AutoLogin:
         self.log("等待重定向...", "STEP")
         for i in range(wait):
             url = page.url
-            
+
+            # 检查是否出现区域不可用错误
+            if self.check_region_not_available(page):
+                self.log("检测到 REGION_NOT_AVAILABLE 错误，登录失败！", "ERROR")
+                return False
+
             # 检查是否已跳转到 claw.cloud
             if 'claw.cloud' in url and 'signin' not in url.lower():
                 self.log("重定向成功！", "SUCCESS")
-                
+
                 # 检测并记录区域
                 self.detect_region(url)
-                
+
                 return True
-            
+
             if 'github.com/login/oauth/authorize' in url:
                 self.oauth(page)
-            
+
             time.sleep(1)
             if i % 10 == 0:
                 self.log(f"  等待... ({i}秒)")
-        
+
         self.log("重定向超时", "ERROR")
         return False
     
     def keepalive(self, page):
         """保活 - 使用检测到的区域 URL"""
         self.log("保活...", "STEP")
-        
+
         # 使用检测到的区域 URL，如果没有则使用默认
         base_url = self.get_base_url()
         self.log(f"使用区域 URL: {base_url}", "INFO")
-        
+
         pages_to_visit = [
             (f"{base_url}/", "控制台"),
             (f"{base_url}/apps", "应用"),
         ]
-        
+
         # 如果检测到了区域，可以额外访问一些区域特定页面
         if self.detected_region:
             self.log(f"当前区域: {self.detected_region}", "INFO")
-        
+
         for url, name in pages_to_visit:
             try:
                 page.goto(url, timeout=30000)
                 page.wait_for_load_state('networkidle', timeout=15000)
+
+                # 检查区域不可用错误
+                if self.check_region_not_available(page):
+                    self.log(f"访问 {name} 时发现区域不可用", "ERROR")
+                    raise Exception("REGION_NOT_AVAILABLE")
+
                 self.log(f"已访问: {name} ({url})", "SUCCESS")
-                
+
                 # 再次检测区域（以防中途跳转）
                 current_url = page.url
                 if 'claw.cloud' in current_url:
                     self.detect_region(current_url)
-                
+
                 time.sleep(2)
             except Exception as e:
+                if 'REGION_NOT_AVAILABLE' in str(e):
+                    self.log(f"访问 {name} 失败: 区域不可用", "ERROR")
+                    raise
                 self.log(f"访问 {name} 失败: {e}", "WARN")
-        
+
         self.shot(page, "完成")
     
     def upload_shots(self):
@@ -1059,6 +1108,12 @@ class AutoLogin:
                 self.log(f"当前: {url}")
 
                 if 'signin' not in url.lower() and 'claw.cloud' in url and  'github.com' not in url:
+                    # 检查区域不可用错误
+                    if self.check_region_not_available(page):
+                        self.shot(page, "区域不可用")
+                        self.notify(False, "REGION_NOT_AVAILABLE - 区域不可用")
+                        sys.exit(1)
+
                     self.log("已登录！", "SUCCESS")
                     # 检测区域
                     self.detect_region(url)
@@ -1101,6 +1156,13 @@ class AutoLogin:
                 # 5. 验证
                 self.log("步骤5: 验证", "STEP")
                 current_url = page.url
+
+                # 检查区域不可用错误
+                if self.check_region_not_available(page):
+                    self.shot(page, "区域不可用")
+                    self.notify(False, "REGION_NOT_AVAILABLE - 区域不可用")
+                    sys.exit(1)
+
                 if 'claw.cloud' not in current_url or 'signin' in current_url.lower():
                     self.notify(False, "验证失败")
                     sys.exit(1)
