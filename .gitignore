@@ -1,2 +1,4 @@
 .claude/settings.local.json
 __pycache__
+node_modules
+chrome-user-data
