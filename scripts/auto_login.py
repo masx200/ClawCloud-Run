@@ -360,15 +360,25 @@ class AutoLogin:
             for c in context.cookies():
                 # 只提取 github.com 相关的 cookies
                 if 'github' in c.get('domain', ''):
+                    # 清理 sameSite 值，确保是 Playwright 接受的格式
+                    same_site = c.get('sameSite', 'None')
+                    if same_site not in ['None', 'Lax', 'Strict']:
+                        same_site = 'None'
+
+                    # 清理 expires 值
+                    expires = c.get('expires', -1)
+                    if expires is None:
+                        expires = -1
+
                     cookies.append({
                         'name': c['name'],
                         'value': c['value'],
                         'domain': c['domain'],
                         'path': c.get('path', '/'),
-                        'expires': c.get('expires', -1),
+                        'expires': expires,
                         'httpOnly': c.get('httpOnly', False),
-                        'secure': c.get('secure', False),
-                        'sameSite': c.get('sameSite', 'None')
+                        'secure': c.get('secure', True),
+                        'sameSite': same_site
                     })
             if cookies:
                 return json.dumps(cookies)
@@ -384,15 +394,25 @@ class AutoLogin:
             for c in context.cookies():
                 # 只提取 claw.cloud 相关的 cookies
                 if 'claw.cloud' in c.get('domain', ''):
+                    # 清理 sameSite 值
+                    same_site = c.get('sameSite', 'None')
+                    if same_site not in ['None', 'Lax', 'Strict']:
+                        same_site = 'None'
+
+                    # 清理 expires 值
+                    expires = c.get('expires', -1)
+                    if expires is None:
+                        expires = -1
+
                     cookies.append({
                         'name': c['name'],
                         'value': c['value'],
                         'domain': c['domain'],
                         'path': c.get('path', '/'),
-                        'expires': c.get('expires', -1),
+                        'expires': expires,
                         'httpOnly': c.get('httpOnly', False),
-                        'secure': c.get('secure', False),
-                        'sameSite': c.get('sameSite', 'None')
+                        'secure': c.get('secure', True),
+                        'sameSite': same_site
                     })
             if cookies:
                 return json.dumps(cookies)
