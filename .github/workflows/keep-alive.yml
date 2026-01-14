@@ -1,6 +1,9 @@
 name: ClawCloud 自动登录保活
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     - cron: "0 1 */5 * *" # UTC 1:00，每5天运行
   workflow_dispatch:
