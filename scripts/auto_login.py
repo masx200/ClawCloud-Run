@@ -352,6 +352,30 @@ class AutoLogin:
             pass
         return None
 
+    def get_github_cookies(self, context):
+        """提取所有 GitHub Cookies"""
+        try:
+            import json
+            cookies = []
+            for c in context.cookies():
+                # 只提取 github.com 相关的 cookies
+                if 'github' in c.get('domain', ''):
+                    cookies.append({
+                        'name': c['name'],
+                        'value': c['value'],
+                        'domain': c['domain'],
+                        'path': c.get('path', '/'),
+                        'expires': c.get('expires', -1),
+                        'httpOnly': c.get('httpOnly', False),
+                        'secure': c.get('secure', False),
+                        'sameSite': c.get('sameSite', 'None')
+                    })
+            if cookies:
+                return json.dumps(cookies)
+        except Exception as e:
+            self.log(f"提取 GitHub Cookies 失败: {e}", "WARN")
+        return None
+
     def get_claw_cookies(self, context):
         """提取所有 ClawCloud Cookie"""
         try:
@@ -377,7 +401,7 @@ class AutoLogin:
         return None
     
     def save_cookie(self, value):
-        """保存新 GitHub Cookie"""
+        """保存新 GitHub Cookie（已废弃，兼容旧版本）"""
         if not value:
             return
 
@@ -395,6 +419,26 @@ class AutoLogin:
 <tg-spoiler>{value}</tg-spoiler>
 """)
             self.log("已通过 Telegram 发送 Cookie", "SUCCESS")
+
+    def save_github_cookies(self, value):
+        """保存所有 GitHub Cookies"""
+        if not value:
+            return
+
+        self.log(f"新 GitHub Cookies ({len(value)} 字符)", "SUCCESS")
+
+        # 自动更新 Secret
+        if self.secret.update('GH_COOKIES', value):
+            self.log("已自动更新 GH_COOKIES", "SUCCESS")
+            self.tg.send("🍪 <b>GitHub Cookies 已自动更新</b>\n\nGH_COOKIES 已保存")
+        else:
+            # 通过 Telegram 发送
+            self.tg.send(f"""🍪 <b>新 GitHub Cookies</b>
+
+请更新 Secret <b>GH_COOKIES</b> (点击查看):
+<tg-spoiler>{value}</tg-spoiler>
+""")
+            self.log("已通过 Telegram 发送 GitHub Cookies", "SUCCESS")
 
     def save_claw_cookies(self, value):
         """保存 ClawCloud Cookies"""
@@ -982,10 +1026,10 @@ class AutoLogin:
                     # 检测区域
                     self.detect_region(url)
                     self.keepalive(page)
-                    # 提取并保存新 GitHub Cookie
-                    new = self.get_session(context)
-                    if new:
-                        self.save_cookie(new)
+                    # 提取并保存所有 GitHub Cookies
+                    gh_cookies = self.get_github_cookies(context)
+                    if gh_cookies:
+                        self.save_github_cookies(gh_cookies)
                     # 提取并保存 ClawCloud Cookies
                     claw_cookies = self.get_claw_cookies(context)
                     if claw_cookies:
@@ -1031,13 +1075,13 @@ class AutoLogin:
                 # 6. 保活（使用检测到的区域 URL）
                 self.keepalive(page)
 
-                # 7. 提取并保存新 Cookie
-                self.log("步骤6: 更新 Cookie", "STEP")
-                new = self.get_session(context)
-                if new:
-                    self.save_cookie(new)
+                # 7. 提取并保存所有 GitHub Cookies
+                self.log("步骤6: 更新 GitHub Cookies", "STEP")
+                gh_cookies = self.get_github_cookies(context)
+                if gh_cookies:
+                    self.save_github_cookies(gh_cookies)
                 else:
-                    self.log("未获取到新 GitHub Cookie", "WARN")
+                    self.log("未获取到新 GitHub Cookies", "WARN")
 
                 # 8. 提取并保存 ClawCloud Cookies
                 self.log("步骤7: 更新 ClawCloud Cookies", "STEP")
