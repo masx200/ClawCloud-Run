@@ -2,14 +2,14 @@ name: ClawCloud 自动登录保活
 
 on:
   schedule:
-    - cron: '0 1 */5 * *'  # UTC 1:00，每5天运行
+    - cron: "0 1 */5 * *" # UTC 1:00，每5天运行
   workflow_dispatch:
 
 jobs:
   auto-login:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
       - name: 设置 Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: 安装依赖
         run: |
@@ -33,5 +33,9 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          
+          # GitHub Releases 上传
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ secrets.GH_REPO }}
+          # GH_RELEASE_TAG: ${{ secrets.GH_RELEASE_TAG }}
+
         run: python scripts/auto_login.py

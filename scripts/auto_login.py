@@ -120,6 +120,69 @@ class Telegram:
         return None
 
 
+class GitHubReleases:
+    """GitHub Releases 上传器"""
+    
+    def __init__(self):
+        self.token = os.environ.get('GH_TOKEN')
+        self.repo = os.environ.get('GH_REPO', os.environ.get('GITHUB_REPOSITORY'))
+        self.tag =  f'screenshots_{time.strftime("%Y%m%d_%H%M%S")}'
+        
+        
+        #""" os.environ.get('GH_RELEASE_TAG', """#)
+        self.ok = bool(self.token and self.repo)
+        if self.ok:
+            print("✅ GitHub Releases 上传已启用")
+        else:
+            print("⚠️ GitHub Releases 上传未启用（需要 GH_TOKEN 和 GH_REPO）")
+    
+    def upload(self, path, name=None):
+        """上传单个文件到 Releases"""
+        if not self.ok or not os.path.exists(path):
+            return None
+        
+        filename = name or os.path.basename(path)
+        
+        try:
+            # 1. 确保 Release 存在
+            url = f"https://api.github.com/repos/{self.repo}/releases/tags/{self.tag}"
+            headers = {"Authorization": f"token {self.token}"}
+            resp = requests.get(url, headers=headers)
+            
+            if resp.status_code == 404:
+                # 创建 Release
+                create_url = f"https://api.github.com/repos/{self.repo}/releases"
+                data = {
+                    "tag_name": self.tag,
+                    "name": self.tag,
+                    "draft": False,
+                    "prerelease": False
+                }
+                resp = requests.post(create_url, json=data, headers=headers)
+                if resp.status_code != 201:
+                    print(f"[GitHubReleases][ERROR] 创建 Release 失败: {resp.status_code}")
+                    return None
+                upload_url = resp.json()['upload_url'].replace("{?name,label}", "")
+            else:
+                upload_url = resp.json()['upload_url'].replace("{?name,label}", "")
+            
+            # 2. 上传文件
+            with open(path, 'rb') as f:
+                upload_url_with_name = f"{upload_url}?name={filename}"
+                headers["Content-Type"] = "image/png"
+                resp = requests.post(upload_url_with_name, data=f, headers=headers)
+            
+            if resp.status_code == 201:
+                return resp.json()['browser_download_url']
+            else:
+                print(f"[GitHubReleases][ERROR] 上传失败: {resp.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"[GitHubReleases][ERROR] 上传异常: {e}")
+            return None
+
+
 class SecretUpdater:
     """GitHub Secret 更新器"""
     
@@ -176,6 +239,7 @@ class AutoLogin:
         self.password = os.environ.get('GH_PASSWORD')
         self.gh_session = os.environ.get('GH_SESSION', '').strip()
         self.tg = Telegram()
+        self.github = GitHubReleases()  # GitHub Releases 上传器
         self.secret = SecretUpdater()
         self.shots = []
         self.logs = []
@@ -651,6 +715,48 @@ class AutoLogin:
         
         self.shot(page, "完成")
     
+    def upload_shots(self):
+        """上传所有截图到 GitHub Releases"""
+        if not self.shots:
+            self.log("没有截图需要上传", "WARN")
+            return
+        
+        if not self.github.ok:
+            self.log("未配置 GitHub Token 或 Repo，跳过上传", "WARN")
+            return
+        
+        self.log(f"开始上传 {len(self.shots)} 个截图到 GitHub Releases...", "INFO")
+        
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        urls = []
+        
+        for shot in self.shots:
+            # 添加时间戳前缀
+            new_name = f"{timestamp}_{shot}"
+            url = self.github.upload(shot, new_name)
+            if url:
+                urls.append(url)
+                self.log(f"✓ {shot} -> {url}", "SUCCESS")
+        
+        if urls:
+            self.log(f"成功上传 {len(urls)} 个截图到 GitHub Releases", "SUCCESS")
+            # 将 URL 添加到 Telegram 通知
+            msg = f"📸 截图已上传到 GitHub Releases:\n" + "\n".join([f"• {u}" for u in urls[:10]])
+            if len(urls) > 10:
+                msg += f"\n... 还有 {len(urls) - 10} 个"
+            self.tg.send(msg)
+        else:
+            self.log("上传截图失败", "ERROR")
+    
+    def cleanup_shots(self):
+        """清理本地截图文件"""
+        for f in self.shots:
+            try:
+                if os.path.exists(f):
+                    os.remove(f)
+            except:
+                pass
+        
     def notify(self, ok, err=""):
         if not self.tg.ok:
             return
@@ -816,6 +922,15 @@ class AutoLogin:
                 self.notify(False, str(e))
                 sys.exit(1)
             finally:
+                # 上传截图到 GitHub Releases
+                try:
+                    self.upload_shots()
+                except Exception as e:
+                    self.log(f"上传截图时出错: {e}", "ERROR")
+                
+                # 清理本地截图
+                self.cleanup_shots()
+                
                 browser.close()
 
 
