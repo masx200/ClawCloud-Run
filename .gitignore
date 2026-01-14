@@ -1,2 +1,12 @@
 .claude/settings.local.json
 __pycache__
+node_modules
+
+# Chrome 用户数据目录
+chrome-user-data/
+
+# 截图文件
+*.png
+
+# 日志文件
+*.log

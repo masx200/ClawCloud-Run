@@ -4,17 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-ClawCloud 自动登录保活工具，通过 GitHub Actions 定时执行 Playwright 自动化脚本，实现自动登录 ClawCloud 并保持会话活跃。
+ClawCloud 自动登录保活工具，通过 GitHub Actions 定时执行自动化脚本，实现自动登录 ClawCloud 并保持会话活跃。
 
-**核心架构**:
-- **主脚本**: [scripts/auto_login.py](scripts/auto_login.py) - 使用 Playwright 同步 API 进行浏览器自动化
-- **工作流**: [.github/workflows/keep-alive.yml](.github/workflows/keep-alive.yml) - GitHub Actions 定时任务（默认每5天）
+本项目提供**两个版本**，推荐使用 **Node.js 版本**以避免机器人检测：
+
+### 🚀 Node.js 版本（推荐）
+- **主脚本**: [index.js](index.js) - 使用 **puppeteer-real-browser** 避免检测
+- **工作流**: [.github/workflows/keep-alive-nodejs.yml](.github/workflows/keep-alive-nodejs.yml) - GitHub Actions 定时任务
+- **优势**: 使用 rebrowser 补丁和真实浏览器指纹，**解决 REGION_NOT_AVAILABLE 检测问题**
+
+### 📦 Python 版本（兼容）
+- **主脚本**: [scripts/auto_login.py](scripts/auto_login.py) - 使用 Playwright 同步 API
+- **工作流**: [.github/workflows/keep-alive.yml](.github/workflows/keep-alive.yml) - GitHub Actions 定时任务
+- **限制**: 可能被检测为自动化工具（REGION_NOT_AVAILABLE 错误）
+
+**通用组件**:
 - **通信方式**: Telegram Bot API（发送通知、接收 2FA 验证码）
 - **存储**: GitHub Secrets（凭据）、GitHub Releases（截图）
 
 ## 运行和测试
 
-### 本地运行（需要 GUI）
+### Node.js 版本（推荐）
+
+```bash
+# 安装依赖
+npm install
+
+# 设置环境变量
+export GH_USERNAME="your_username"
+export GH_PASSWORD="your_password"
+export GH_COOKIES='[{"name":"user_session","value":"..."}]'
+export TG_BOT_TOKEN="your_bot_token"
+export TG_CHAT_ID="your_chat_id"
+export REPO_TOKEN="your_repo_token"  # 可选，用于自动更新 Secret
+
+# 运行脚本
+node index.js
+```
+
+### Python 版本
 
 ```bash
 # 安装依赖
@@ -36,6 +64,16 @@ python scripts/auto_login.py
 
 ### 本地测试（修改为 headful 模式）
 
+**Node.js 版本**:
+编辑 [index.js:893](index.js#L893)：
+```javascript
+const { browser, page } = await connect({
+  headless: false,  // 改为 false
+  // ... 其他配置
+});
+```
+
+**Python 版本**:
 编辑 [scripts/auto_login.py:931](scripts/auto_login.py#L931)：
 ```python
 # 将 headless=True 改为 headless=False
@@ -44,6 +82,11 @@ browser = p.chromium.launch(headless=False, args=['--no-sandbox'])
 
 ### GitHub Actions 触发
 
+**Node.js 版本**:
+- **自动运行**: cron 表达式 `"0 1 */5 * *"`（UTC 时间 01:00，每5天）
+- **手动触发**: GitHub 仓库 → Actions → ClawCloud 自动登录 (Node.js) → Run workflow
+
+**Python 版本**:
 - **自动运行**: cron 表达式 `"0 1 */5 * *"`（UTC 时间 01:00，每5天）
 - **手动触发**: GitHub 仓库 → Actions → ClawCloud 自动登录保活 → Run workflow
 
@@ -124,13 +167,40 @@ GitHub Actions 工作流会自动安装 Cloudflare WARP 并启用 IPv6 连接（
 
 ## 故障排除
 
-1. **登录失败**: 检查 GitHub Actions 日志中的截图（上传到 Releases）
-2. **2FA 超时**: 确保 Telegram Bot 正常配置，检查 `TWO_FACTOR_WAIT` 设置
-3. **Cookie 更新失败**: 确认 `REPO_TOKEN` 有 `repo` 权限
-4. **区域检测错误**: 查看日志中的 "当前 URL"，手动检查区域子域名格式
+1. **REGION_NOT_AVAILABLE 错误**:
+   - **解决方案**: 使用 **Node.js 版本**（puppeteer-real-browser）避免检测
+   - 如果 Python 版本遇到此错误，建议切换到 Node.js 版本
+
+2. **登录失败**: 检查 GitHub Actions 日志中的截图（上传到 Releases）
+
+3. **2FA 超时**: 确保 Telegram Bot 正常配置，检查 `TWO_FACTOR_WAIT` 设置
+
+4. **Cookie 更新失败**: 确认 `REPO_TOKEN` 有 `repo` 权限
+
+5. **区域检测错误**: 查看日志中的 "当前 URL"，手动检查区域子域名格式
+
+6. **puppeteer-real-browser 相关**:
+   - 确保 Node.js 版本 >= 18
+   - Chromium 浏览器会自动通过 `npx puppeteer browsers install chromium` 安装
+   - Cloudflare Turnstile 会自动处理（`turnstile: true`）
 
 ## 代码修改注意事项
 
 - 修改登录流程时需要同步更新截图步骤编号（`shot` 方法调用）
 - 修改超时时间需要同时更新环境变量读取和硬编码的默认值
-- 添加新的环境变量需要在 [.github/workflows/keep-alive.yml](.github/workflows/keep-alive.yml) 中配置
+- 添加新的环境变量需要在对应的工作流文件中配置：
+  - **Node.js 版本**: [.github/workflows/keep-alive-nodejs.yml](.github/workflows/keep-alive-nodejs.yml)
+  - **Python 版本**: [.github/workflows/keep-alive.yml](.github/workflows/keep-alive.yml)
+
+## 两个版本的主要差异
+
+| 特性 | Node.js 版本 | Python 版本 |
+|------|-------------|-------------|
+| 框架 | puppeteer-real-browser | Playwright |
+| 反检测能力 | ✅ 强（rebrowser 补丁） | ❌ 弱（易被检测） |
+| Turnstile 支持 | ✅ 自动处理 | ❌ 需手动处理 |
+| 鼠标模拟 | ✅ ghost-cursor | ❌ 无 |
+| 运行环境 | Node.js 18+ | Python 3.8+ |
+| 依赖大小 | ~300MB | ~400MB |
+
+**建议**: 如果遇到 `REGION_NOT_AVAILABLE` 错误，**强烈推荐使用 Node.js 版本**。

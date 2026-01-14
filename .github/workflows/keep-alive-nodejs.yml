@@ -1,0 +1,75 @@
+name: ClawCloud 自动登录 (Node.js + puppeteer-real-browser)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每 5 天运行一次 (UTC 时间 01:00)
+    - cron: "0 1 */5 * *"
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖
+        run: |
+          npm ci
+          npx puppeteer browsers install chromium
+
+      - name: 安装 Cloudflare WARP (启用 IPv6)
+        run: |
+          # 添加 Cloudflare GPG 密钥
+          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+
+          # 添加 Cloudflare WARP 仓库
+          echo 'deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ jammy main' | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+
+          # 更新并安装 WARP
+          sudo apt-get update && sudo apt-get install -y cloudflare-warp
+
+          # 注册 WARP
+          warp-cli --accept-tos registration new
+
+          # 启用 WARP 并连接
+          warp-cli --accept-tos enable-always-on
+          warp-cli --accept-tos connect
+
+          # 等待连接建立
+          sleep 5
+
+          # 检查连接状态
+          warp-cli --accept-tos status
+
+          # 测试 IPv6 连接
+          curl -6 http://ipv6.google.com || echo "IPv6 测试失败（可能未完全配置）"
+
+      - name: 运行自动登录脚本
+        env:
+          GH_USERNAME: ${{ secrets.GH_USERNAME }}
+          GH_PASSWORD: ${{ secrets.GH_PASSWORD }}
+          GH_COOKIES: ${{ secrets.GH_COOKIES }}
+          GH_SESSION: ${{ secrets.GH_SESSION }}
+          CLAW_COOKIES: ${{ secrets.CLAW_COOKIES }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_REPO: ${{ secrets.GH_REPO || github.repository }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          TWO_FACTOR_WAIT: ${{ secrets.TWO_FACTOR_WAIT || '120' }}
+        run: node index.js
+
+      - name: 上传截图（如果失败）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: '*.png'
+          retention-days: 7

@@ -1,0 +1,30 @@
+{
+  "name": "clawcloud-auto-login",
+  "version": "1.0.0",
+  "description": "ClawCloud 自动登录保活工具 - 使用 puppeteer-real-browser 避免检测",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node index.js"
+  },
+  "keywords": [
+    "clawcloud",
+    "automation",
+    "puppeteer",
+    "playwright"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "node-jose": "^2.2.0",
+    "puppeteer-real-browser": "^1.4.4",
+    "tweetnacl": "^1.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "tslib": "^2.8.1",
+    "typescript": "^5.9.3"
+  }
+}
