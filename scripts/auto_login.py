@@ -33,6 +33,7 @@ class Telegram:
         self.ok = bool(self.token and self.chat_id)
     
     def send(self, msg):
+        print(f"[Telegram][INFO] 发送消息: {msg}")
         if not self.ok:
             return
         try:
