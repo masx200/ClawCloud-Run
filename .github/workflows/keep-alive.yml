@@ -27,20 +27,91 @@ jobs:
           pip install playwright requests pynacl
           playwright install chromium
           playwright install-deps
+      - name: Install Cloudflare WARP
+        run: |
+          # 检测操作系统类型
+          . /etc/os-release
+          OS=$ID
+          if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+            echo "--- Installing for Debian/Ubuntu ---"
+            sudo apt-get update
+            sudo apt-get install -y curl gpg lsb-release
+            curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+            sudo apt-get update && sudo apt-get install -y cloudflare-warp
+          elif [[ "$OS" == "rhel" || "$OS" == "centos" || "$OS" == "fedora" || "$OS" == "rocky" || "$OS" == "almalinux" ]]; then
+            echo "--- Installing for RHEL/CentOS/Fedora ---"
+            sudo rpm -e 'gpg-pubkey(4fa1c3ba-61abda35)' || true
+            sudo rpm --import https://pkg.cloudflareclient.com/pubkey.gpg
+            curl -fsSL https://pkg.cloudflareclient.com/cloudflare-warp-ascii.repo | sudo tee /etc/yum.repos.d/cloudflare-warp.repo
+            if command -v dnf &> /dev/null; then
+              sudo dnf update -y && sudo dnf install -y cloudflare-warp
+            else
+              sudo yum update -y && sudo yum install -y cloudflare-warp
+            fi
+          else
+            echo "Unsupported OS: $OS"
+            exit 1
+          fi
+      - name: Register and connect to WARP
+        run: |
+          echo "--- Registering WARP client ---"
+          sudo warp-cli --accept-tos registration new
+          echo "--- Connecting to WARP ---"
+          sudo warp-cli --accept-tos connect
+          # 初始化循环变量
+          MAX_ATTEMPTS=6  # 60 seconds / 10 seconds per attempt
+          ATTEMPT=1
+          echo "--- Waiting for IPv6 connectivity (max 1 minute) ---"
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Pinging https://ipv6.test-ipv6.com/ via IPv6..."
+
+            if curl -6 -sL -o /dev/null https://ipv6.test-ipv6.com/; then
+              echo "✅ IPv6 connectivity is successful!"
+              echo "WARP is ready."
+              break
+            fi
+            echo "❌ Attempt $ATTEMPT failed. Waiting for 10 seconds..."
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
+            echo "❌ Error: Failed to establish IPv6 connectivity after 1 minute."
+            echo "--- WARP Status for Debugging ---"
+            sudo warp-cli --accept-tos status
+            exit 1
+          fi
+      - name: Verify IPv6 Connection and run tests
+        run: |
+          echo "--- WARP Status ---"
+          sudo warp-cli --accept-tos status
+
+          echo "--- Checking public IPv6 address ---"
+          IPV6_ADDR=$(curl -6 -s https://ifconfig.co)
+          echo "Detected IPv6 Address: $IPV6_ADDR"
+
+          echo "--- Pinging an IPv6 address ---"
+          ping6 -c 4 ipv6.google.com
+          echo "======================================================"
+          echo "Now you can run your tests that require IPv6 access."
+          echo "======================================================"
+
+          # 在这里执行你真正需要 IPv6 的测试命令
+          # 例如，这个命令现在应该会成功
+          curl -6 -v -I https://ipv6.test-ipv6.com/
+
+          # 例如: npm run test-ipv6
+          # 例如: python my_test_script.py
 
       - name: 运行自动登录
         env:
           GH_USERNAME: ${{ secrets.GH_USERNAME }}
           GH_PASSWORD: ${{ secrets.GH_PASSWORD }}
           GH_SESSION: ${{ secrets.GH_SESSION }}
-          GH_COOKIES : ${{ secrets.GH_COOKIES  }}
-
-
-
+          GH_COOKIES: ${{ secrets.GH_COOKIES  }}
 
           CLAW_COOKIES: ${{ secrets.CLAW_COOKIES }}
 
-          
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
