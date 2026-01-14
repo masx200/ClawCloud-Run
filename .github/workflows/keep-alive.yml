@@ -33,6 +33,8 @@ jobs:
           GH_USERNAME: ${{ secrets.GH_USERNAME }}
           GH_PASSWORD: ${{ secrets.GH_PASSWORD }}
           GH_SESSION: ${{ secrets.GH_SESSION }}
+          GH_COOKIES : ${{ secrets.GH_COOKIES  }}
+
 
 
 

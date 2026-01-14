@@ -234,11 +234,26 @@ class SecretUpdater:
 
 class AutoLogin:
     """自动登录"""
-    
+
+    username: str | None
+    password: str | None
+    gh_session: str
+    gh_cookies: str  # 新增：支持多个 GitHub cookies
+    claw_cookies: str
+    tg: Telegram
+    github: 'GitHubReleases'
+    secret: 'SecretUpdater'
+    shots: list[str]
+    logs: list[str]
+    n: int
+    detected_region: str | None
+    region_base_url: str | None
+
     def __init__(self):
         self.username = os.environ.get('GH_USERNAME')
         self.password = os.environ.get('GH_PASSWORD')
         self.gh_session = os.environ.get('GH_SESSION', '').strip()
+        self.gh_cookies = os.environ.get('GH_COOKIES', '').strip()  # 新增：支持多个 GitHub cookies
         self.claw_cookies = os.environ.get('CLAW_COOKIES', '').strip()
         self.tg = Telegram()
         self.github = GitHubReleases()  # GitHub Releases 上传器
@@ -837,7 +852,7 @@ class AutoLogin:
         print("="*50 + "\n")
         
         self.log(f"用户名: {self.username}")
-        self.log(f"GitHub Session: {'有' if self.gh_session else '无'}")
+        self.log(f"GitHub Cookies: {'有' if self.gh_cookies else ('有(旧格式)' if self.gh_session else '无')}")
         self.log(f"ClawCloud Cookies: {'有' if self.claw_cookies else '无'}")
         self.log(f"密码: {'有' if self.password else '无'}")
         self.log(f"登录入口: {LOGIN_ENTRY_URL}")
@@ -856,14 +871,46 @@ class AutoLogin:
             page = context.new_page()
             
             try:
-                # 预加载 GitHub Cookie
-                if self.gh_session:
+                # 预加载 GitHub Cookies
+                if self.gh_cookies:
+                    try:
+                        import json
+                        cookies = []
+
+                        # 尝试解析 JSON 格式
+                        if self.gh_cookies.startswith('['):
+                            cookies = json.loads(self.gh_cookies)
+                        else:
+                            # 解析 Cookie 字符串格式 (name=value; name2=value2; ...)
+                            for item in self.gh_cookies.split(';'):
+                                item = item.strip()
+                                if '=' in item:
+                                    name, value = item.split('=', 1)
+                                    cookies.append({
+                                        'name': name.strip(),
+                                        'value': value.strip(),
+                                        'domain': '.github.com',
+                                        'path': '/',
+                                        'expires': -1,
+                                        'httpOnly': False,
+                                        'secure': True,
+                                        'sameSite': 'Lax'
+                                    })
+
+                        if cookies:
+                            context.add_cookies(cookies)
+                            self.log(f"已加载 {len(cookies)} 个 GitHub Cookies", "SUCCESS")
+                    except Exception as e:
+                        self.log(f"加载 GitHub Cookies 失败: {e}", "WARN")
+
+                # 兼容旧的 GH_SESSION 环境变量
+                elif self.gh_session:
                     try:
                         context.add_cookies([
                             {'name': 'user_session', 'value': self.gh_session, 'domain': 'github.com', 'path': '/'},
                             {'name': 'logged_in', 'value': 'yes', 'domain': 'github.com', 'path': '/'}
                         ])
-                        self.log("已加载 GitHub Session Cookie", "SUCCESS")
+                        self.log("已加载 GitHub Session Cookie (旧格式)", "SUCCESS")
                     except:
                         self.log("加载 GitHub Cookie 失败", "WARN")
 
