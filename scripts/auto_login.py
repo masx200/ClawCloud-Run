@@ -381,6 +381,7 @@ class AutoLogin:
                         'sameSite': same_site
                     })
             if cookies:
+                self.log(f"提取到 {len(cookies)} 个 GitHub Cookies", "INFO")
                 return json.dumps(cookies)
         except Exception as e:
             self.log(f"提取 GitHub Cookies 失败: {e}", "WARN")
@@ -950,16 +951,32 @@ class AutoLogin:
                                 item = item.strip()
                                 if '=' in item:
                                     name, value = item.split('=', 1)
-                                    cookies.append({
-                                        'name': name.strip(),
-                                        'value': value.strip(),
-                                        'domain': '.github.com',
-                                        'path': '/',
-                                        'expires': -1,
-                                        'httpOnly': False,
-                                        'secure': True,
-                                        'sameSite': 'Lax'
-                                    })
+                                    name = name.strip()
+                                    value = value.strip()
+
+                                    # __Host- 前缀的 cookie 有特殊要求
+                                    if name.startswith('__Host-'):
+                                        cookies.append({
+                                            'name': name,
+                                            'value': value,
+                                            'domain': 'github.com',  # 精确域名，不能有前导点
+                                            'path': '/',
+                                            'expires': -1,
+                                            'httpOnly': False,
+                                            'secure': True,  # 必须是 True
+                                            'sameSite': 'None'
+                                        })
+                                    else:
+                                        cookies.append({
+                                            'name': name,
+                                            'value': value,
+                                            'domain': '.github.com',  # 可以有前导点
+                                            'path': '/',
+                                            'expires': -1,
+                                            'httpOnly': False,
+                                            'secure': True,
+                                            'sameSite': 'Lax'
+                                        })
 
                         if cookies:
                             context.add_cookies(cookies)
